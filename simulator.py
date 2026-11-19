@@ -110,4 +110,74 @@ def run_variant_scenario(params, sim_time_ms, seed, policy) -> dict:
       * return the four metrics. pairs_consumed_per_delivery =
         stats['generated'] / max(1, delivered).
     """
-    raise NotImplementedError("TODO: implement run_variant_scenario")
+    phys = params["physics"]
+    links = make_links(params, "variant")
+    sim = Simulator(
+        links=links,
+        t2=phys["t2_ms"],
+        q_swap=phys["q_swap"],
+        f_swap=phys["f_swap"],
+        purification_allowed=phys["purification_allowed"],
+        seed=seed,
+    )
+    delivered = sim.run(sim_time_ms, policy=policy)
+    summary = summarise(delivered, sim_time_ms)
+
+    reqs = request_times(params, sim_time_ms, seed)
+    latencies = _fifo_latencies(reqs, [d.delivered_at for d in delivered])
+
+    return {
+        "rate": float(summary["rate"]),
+        "mean_fidelity": float(summary["mean_fidelity"]),
+        "p95_latency_ms": _p95(latencies),
+        "pairs_consumed_per_delivery":
+            sim.state.stats["generated"] / max(1, len(delivered)),
+    }
+
+
+# ---------------------------------------------------------------- request matching
+
+
+def _fifo_latencies(req_times, delivery_times):
+    """Match requests to end-to-end pairs through a pooled, unlimited buffer.
+
+    Events are processed in time order. A request that finds a buffered pair
+    is served at zero latency; otherwise it joins a FIFO queue and is served
+    by the next delivery, with latency = delivery time - arrival time.
+    Requests still queued at the end of the run are unserved and excluded.
+    On a time tie the delivery is processed first (the pair is ready).
+    """
+    reqs = sorted(req_times)
+    dels = sorted(delivery_times)
+    latencies = []
+    waiting = []          # FIFO of arrival times of queued requests
+    head = 0              # index of the oldest still-waiting request
+    buffered = 0          # end-to-end pairs in the pool
+    i = j = 0
+    while i < len(reqs) or j < len(dels):
+        if j < len(dels) and (i >= len(reqs) or dels[j] <= reqs[i]):
+            t = dels[j]
+            j += 1
+            if head < len(waiting):
+                latencies.append(t - waiting[head])
+                head += 1
+            else:
+                buffered += 1
+        else:
+            t = reqs[i]
+            i += 1
+            if buffered > 0:
+                buffered -= 1
+                latencies.append(0.0)
+            else:
+                waiting.append(t)
+    return latencies
+
+
+def _p95(values):
+    """95th percentile, nearest-rank (same convention as qnetsim.summarise).
+    Returns inf when no request was served."""
+    if not values:
+        return float("inf")
+    s = sorted(values)
+    return float(s[min(len(s) - 1, int(math.ceil(0.95 * len(s))) - 1)])
