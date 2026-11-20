@@ -5,13 +5,17 @@ Drive the provided harness (qnetsim.py) to implement the three graded
 entry points. Signatures are normative; the autograder imports them.
 
 Only numpy + standard library + qnetsim may be used.
+
+AI-assistant declaration: run_one_hop and run_two_hop (and their two small
+helper policy classes) were drafted with help from Claude (Anthropic) and
+then read, tested and understood by the group member who owns them (Aarav).
 """
 
 import math
 
 import numpy as np
 
-from qnetsim import Link, Simulator, summarise
+from qnetsim import DeliveredPair, Link, Simulator, summarise
 
 
 # ---------------------------------------------------------------- helpers
@@ -65,33 +69,77 @@ def request_times(params, sim_time_ms, seed):
 # ---------------------------------------------------------------- graded entry points
 
 
+class _RecordEveryPairPolicy:
+    """Policy for the one-hop scenario: every generated pair counts as
+    'delivered' straight away (there is no swapping on a single link)."""
+
+    def on_pair_ready(self, link, pair, state, sim):
+        # Write a delivery record into the simulator's list of deliveries.
+        sim.delivered.append(DeliveredPair(
+            request_id=-1,                          # no request is involved
+            delivered_at=state.now,                 # the moment it was born
+            fidelity=state.current_fidelity(pair),  # fidelity right now
+            consumed=1,                             # one raw pair used
+        ))
+        # The harness has just appended this pair to the END of the link's
+        # inventory, so pop() removes exactly this pair (we "used" it).
+        state.pairs[link.link_id].pop()
+
+
+class _SwapAsapPolicy:
+    """Policy for the two-hop scenario: swap the moment both links hold a
+    pair. Links must be given as the left and right link ids."""
+
+    def __init__(self, left_id, right_id):
+        self.left_id = left_id
+        self.right_id = right_id
+
+    def on_pair_ready(self, link, pair, state, sim):
+        # `while` (not `if`): keep swapping as long as BOTH links still have
+        # at least one waiting pair. sim.swap() removes one pair per link.
+        while state.pairs.get(self.left_id) and state.pairs.get(self.right_id):
+            sim.swap(self.left_id, self.right_id)
+
+
 def run_one_hop(params, sim_time_ms, seed) -> dict:
     """Reference scenario: a single elementary link, no swapping.
     Return {"rate": ..., "mean_fidelity": ...}.
-
-    TODO: build the one-hop links, run the Simulator for sim_time_ms with
-    policy=None, and use qnetsim.summarise on a delivered-list you fill
-    yourself (every generated pair counts as delivered here — record
-    deliveries via a tiny inline policy or by reading state.pairs/stats).
-
-    HINT: the harness only records `delivered` on swap; for the one-hop
-    case, write a 3-line policy class whose on_pair_ready appends a
-    DeliveredPair-equivalent record (or count pairs via state.stats and
-    track fidelities in a list).
     """
-    raise NotImplementedError("TODO: implement run_one_hop")
+    links = make_links(params, "one_hop")
+    sim = Simulator(
+        links=links,
+        t2=math.inf,            # memories never decay in this reference
+        q_swap=1.0,             # (unused: there is no swap)
+        f_swap=params["physics"].get("f_swap", 1.0),   # (unused as well)
+        purification_allowed=False,
+        seed=seed,
+    )
+    delivered = sim.run(sim_time_ms, policy=_RecordEveryPairPolicy())
+    summary = summarise(delivered, sim_time_ms)
+    return {"rate": float(summary["rate"]),
+            "mean_fidelity": float(summary["mean_fidelity"])}
 
 
 def run_two_hop(params, sim_time_ms, seed) -> dict:
     """Reference scenario: two links, one repeater, immediate swap,
     T2 = infinity, q_swap = 1 (params['reference']['two_hop']).
     Return {"rate": ..., "mean_fidelity": ...}.
-
-    TODO: build links, construct the Simulator with t2=math.inf,
-    q_swap=1.0, f_swap=params['physics']['f_swap']; use a policy that swaps
-    as soon as both links hold a pair; summarise with qnetsim.summarise.
     """
-    raise NotImplementedError("TODO: implement run_two_hop")
+    links = make_links(params, "two_hop")
+    sim = Simulator(
+        links=links,
+        t2=math.inf,
+        q_swap=1.0,
+        f_swap=params["physics"]["f_swap"],
+        purification_allowed=False,
+        seed=seed,
+    )
+    policy = _SwapAsapPolicy(left_id=links[0].link_id,
+                             right_id=links[1].link_id)
+    delivered = sim.run(sim_time_ms, policy=policy)
+    summary = summarise(delivered, sim_time_ms)
+    return {"rate": float(summary["rate"]),
+            "mean_fidelity": float(summary["mean_fidelity"])}
 
 
 def run_variant_scenario(params, sim_time_ms, seed, policy) -> dict:
