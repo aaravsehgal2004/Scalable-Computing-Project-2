@@ -1,6 +1,8 @@
 """
 policy.py — QIS-NET Project 2 policy (STUDENT FILE: replace the baseline).
 
+AI-use declaration: Used claude TO explain this policy and understand the concepts; 
+
 The policy decides, each time a fresh pair arrives on a link, what to do:
 swap immediately, purify first, hold, or discard aged pairs. Your variant's
 SLOs (rate, fidelity, p95 latency) will typically NOT be met by the
@@ -15,9 +17,9 @@ Design space (see spec section 3.2):
 
 import math
 
-# ---- tuning knobs (chosen in T16; see the sweep table in the report) ----
-DEFAULT_MAX_LEVEL = 2          # purification rounds on the abundant link (0-3)
-DEFAULT_MAX_WAIT_MS = 20.0     # discard abundant-link pairs older than this
+
+DEFAULT_MAX_LEVEL = 2        
+DEFAULT_MAX_WAIT_MS = 20.0
 
 class BaselinePolicy:
     """Swap-as-soon-as-possible; never purify. PROVIDED as the baseline.
@@ -26,8 +28,8 @@ class BaselinePolicy:
 
     def __init__(self, params):
         self.params = params
-        # map each repeater node to its adjacent link pairs for swapping
-        self.chains = params["policy"]["swap_chains"]  # list of [left, right]
+ 
+        self.chains = params["policy"]["swap_chains"]
 
     def on_pair_ready(self, link, pair, state, sim):
         for left, right in self.chains:
@@ -45,14 +47,14 @@ class FreshestFirstPolicy:
         self.max_wait_ms = max_wait_ms
         self.purify_on = params["physics"]["purification_allowed"]
 
-        # Work out which link is scarce: the one with the lowest pair rate
-        # (attempt_rate x p_success). Every other link is "abundant".
+      
+ 
         links = params["topology"]["links"]
         rates = [l["attempt_rate"] * l["p_success"] for l in links]
         self.scarce = rates.index(min(rates))
         self.abundant = [i for i in range(len(links)) if i != self.scarce]
 
-    # ---------------------------------------------------------- the hook
+  
     def on_pair_ready(self, link, pair, state, sim):
         # A new pair has just arrived on `link`.
         if link.link_id in self.abundant:
@@ -61,7 +63,7 @@ class FreshestFirstPolicy:
                 self.purify_up(link.link_id, state, sim)
         self.try_swaps(state, sim)
 
-    # ---------------------------------------------------------- step 2
+
     def discard_stale(self, link_id, state, sim):
         """Throw away pairs that have waited longer than max_wait_ms.
         The list is oldest-first, so we keep removing index 0."""
@@ -69,7 +71,7 @@ class FreshestFirstPolicy:
         while inv and state.now - inv[0].born > self.max_wait_ms:
             sim.discard(link_id, 0)
 
-    # ---------------------------------------------------------- step 3
+
     def purify_up(self, link_id, state, sim):
         """While two pairs of the same level exist (below max_level),
         purify them into one pair of the next level."""
@@ -80,19 +82,18 @@ class FreshestFirstPolicy:
             for level in range(self.max_level):
                 same = [p for p in inv if level_of(p) == level]
                 if len(same) >= 2:
-                    # sim.purify() always uses the two pairs at the FRONT of
-                    # the list, so move the two freshest same-level pairs there.
+
                     a, b = same[-1], same[-2]
                     inv.remove(a)
                     inv.remove(b)
                     inv.insert(0, b)
                     inv.insert(0, a)
                     if sim.purify(link_id):
-                        inv[-1].level = level + 1   # the new purified pair
+                        inv[-1].level = level + 1 
                     changed = True
-                    break        # start again from level 0
+                    break 
 
-    # ---------------------------------------------------------- step 4
+
     def try_swaps(self, state, sim):
         """For each repeater: if both sides hold a pair, swap now, using the
         best pair on each side."""
@@ -103,7 +104,7 @@ class FreshestFirstPolicy:
                 sim.swap(left, right, left_index=li, right_index=ri)
 
 
-# ---------------------------------------------------------- small helpers
+
 def level_of(pair):
     """How many purification rounds made this pair (fresh pairs = 0)."""
     return getattr(pair, "level", 0)
