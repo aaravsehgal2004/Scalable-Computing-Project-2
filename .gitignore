@@ -1,6 +1,0 @@
-venv/
-__pycache__/
-*.pyc
-.env
-slo_pass_*.json
-ChatGPT*.png
