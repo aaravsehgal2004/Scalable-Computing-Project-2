@@ -1,7 +1,7 @@
 """
 policy.py — QIS-NET Project 2 policy (STUDENT FILE: replace the baseline).
 
-AI-use declaration: Used claude explain this policy and teach the concepts; 
+AI-use declaration: Used claude TO explain this policy and understand the concepts; 
 
 The policy decides, each time a fresh pair arrives on a link, what to do:
 swap immediately, purify first, hold, or discard aged pairs. Your variant's
