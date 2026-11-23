@@ -9,6 +9,8 @@ Only numpy + standard library + qnetsim may be used.
 AI-assistant declaration: run_one_hop and run_two_hop (and their two small
 helper policy classes) were drafted with help from Claude (Anthropic) and
 then read, tested and understood by the group member who owns them (Aarav).
+AI-assistant declaration:  run_variant_scenario and  _fifo_latencies and _p95  and other test files 
+were drafted and modified with help from Claude and I read, tested and understood the code (Bangchen).
 """
 
 import math
